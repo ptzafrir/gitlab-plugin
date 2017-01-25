@@ -151,7 +151,7 @@ public class GitLabAcceptMergeRequestPublisherTest {
                 .withPath("/gitlab/api/v3/projects/" + projectId + "/merge_requests/" + mergeRequestId + "/merge")
                 .withMethod("PUT")
                 .withHeader("PRIVATE-TOKEN", "secret")
-                .withBody("merge_commit_message=Merge+Request+accepted+by+jenkins+build+success&should_remove_source_branch=false");
+                .withBody("should_remove_source_branch=true");
     }
 
     private AbstractBuild mockBuild(String buildUrl, String gitLabConnection, Result result, Integer buildNumber, String... remoteUrls) {

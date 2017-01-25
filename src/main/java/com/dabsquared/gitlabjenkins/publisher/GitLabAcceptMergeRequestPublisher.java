@@ -47,7 +47,7 @@ public class GitLabAcceptMergeRequestPublisher extends MergeRequestNotifier {
     protected void perform(Run<?, ?> build, TaskListener listener, GitLabApi client, Integer projectId, Integer mergeRequestId) {
         try {
             if (build.getResult() == Result.SUCCESS) {
-                client.acceptMergeRequest(projectId, mergeRequestId, "Merge Request accepted by jenkins build success", false);
+                client.acceptMergeRequest(projectId, mergeRequestId, true);
             }
         } catch (WebApplicationException | ProcessingException e) {
             listener.getLogger().printf("Failed to accept merge request for project '%s': %s%n", projectId, e.getMessage());
