@@ -26,6 +26,8 @@ interface GitLabApiProxy {
 
     void getCommit(String projectId, String sha);
 
+    void acceptMergeRequest(Integer projectId, Integer mergeRequestId, boolean shouldRemoveSourceBranch);
+    
     void acceptMergeRequest(Integer projectId, Integer mergeRequestId, String mergeCommitMessage, boolean shouldRemoveSourceBranch);
 
     void createMergeRequestNote(Integer projectId, Integer mergeRequestId, String body);

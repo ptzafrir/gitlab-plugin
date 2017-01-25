@@ -91,6 +91,6 @@ public class GitLabAcceptMergeRequestPublisherTest {
                 .withPath("/gitlab/api/" + apiLevel + "/projects/" + PROJECT_ID + "/merge_requests/" + mergeRequestId + "/merge")
                 .withMethod("PUT")
                 .withHeader("PRIVATE-TOKEN", "secret")
-                .withBody("merge_commit_message=Merge+Request+accepted+by+jenkins+build+success&should_remove_source_branch=false");
+                .withBody("should_remove_source_branch=true");
     }
 }

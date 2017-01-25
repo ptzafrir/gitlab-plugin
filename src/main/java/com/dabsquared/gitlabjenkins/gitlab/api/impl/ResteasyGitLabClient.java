@@ -72,7 +72,10 @@ final class ResteasyGitLabClient implements GitLabClient {
 
     @Override
     public void acceptMergeRequest(MergeRequest mr, String mergeCommitMessage, boolean shouldRemoveSourceBranch) {
-        api.acceptMergeRequest(mr.getProjectId(), mergeRequestIdProvider.apply(mr), mergeCommitMessage, shouldRemoveSourceBranch);
+    	if (mergeCommitMessage == null)
+    		api.acceptMergeRequest(mr.getProjectId(), mergeRequestIdProvider.apply(mr), shouldRemoveSourceBranch);
+    	else
+    		api.acceptMergeRequest(mr.getProjectId(), mergeRequestIdProvider.apply(mr), mergeCommitMessage, shouldRemoveSourceBranch);
     }
 
     @Override

@@ -117,6 +117,14 @@ interface V3GitLabApiProxy extends GitLabApiProxy {
     @Override
     void acceptMergeRequest(@PathParam("projectId") Integer projectId,
                             @PathParam("mergeRequestId") Integer mergeRequestId,
+                            @FormParam("should_remove_source_branch") boolean shouldRemoveSourceBranch);
+    
+    @PUT
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Path("/projects/{projectId}/merge_requests/{mergeRequestId}/merge")
+    void acceptMergeRequest(@PathParam("projectId") Integer projectId,
+                            @PathParam("mergeRequestId") Integer mergeRequestId,
                             @FormParam("merge_commit_message") String mergeCommitMessage,
                             @FormParam("should_remove_source_branch") boolean shouldRemoveSourceBranch);
 
