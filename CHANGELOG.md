@@ -1,5 +1,44 @@
 ChangeLog
+
+1.5.4
 =====================
+* #714: Fix broken 'Trigger on approved merge requests' setting
+* #726: Do not build approved merge requests unless configured to do so
+
+1.5.3
+=====================
+* #622: GitlabCommitStatus throws error after force kill
+* #678: Fixes NPE if GitLab connection fails
+
+1.5.2
+=====================
+* #524: If Blue Ocean is installed, build URL in GitLab will point to Blue Ocean
+* #564: Build status can now be sent to GitLab from builds downstream of the one that GitLab triggered
+* #589: Make it easier to distinguish a commit push from a tag push
+* #616: Make it easier to configure gitlab-plugin from Job DSL plugin.
+* #639: Don't NPE if one of the filter specs is not specified in a Jenkinsfile
+* #658: Send current state of build to GitLab when making commit API calls so it can be seen in the GitLab UI
+* #659: Trigger builds when MR is approved in GitLab
+
+1.5.1
+=====================
+* #648: Fix NPE when an MR build is triggered
+* #650: Improve GitLab API version autodetection
+* #653: Fix unsupported date format in MR trigger
+* #656: Fix 404 error when making v4 API calls for MRs
+
+1.5.0
+=====================
+* #614: Add optional support for GitLab API v4
+
+1.4.8
+=====================
+* #483: If 'Add message for failed builds' feature is used, send the message for both failed and 'unstable' builds
+* #514: Fix branch name comparison to avoid spurious builds, fixes issue #512
+* #540: Allow jobs to be triggered by GitLab 'Pipeline' event
+* #552: Use GitLab's host url to calculate project's ID - allows Jenkins to work with GitLab projects that are in subgroups (issue #538)
+* #567: Plugin should have secure defaults - first-time installs will now have plugin endpoint require auth by default
+* #604: Recursively retrieve all BuildData - prevents Jenkins from rebuilding when MR assignee changes (issue #603)
 
 1.4.7
 =====================
