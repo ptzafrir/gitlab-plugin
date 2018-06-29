@@ -405,6 +405,18 @@ In order to build when a new tag is pushed:
 ## Add a note to merge requests
 To add a note to GitLab merge requests after the build completes, select 'Add note with build status on GitLab merge requests' from the optional Post-build actions. Optionally, click the 'Advanced' button to customize the content of the note depending on the build result.
 
+## Accept merge request
+To accept a merge request when build is completed select 'Accept GitLab merge request on success' from the optional Post-build actions.
+
+### Pipeline jobs
+For pipeline jobs two advanced configuration options can be provided
+1. **useMRDescription** - Adds the merge request description into the merge commit, in a similar format as would be recieved by selecting 'Modify commit message' followed by 'include description in commit message' in GitLab UI  
+2. **removeSourceBranch** - Removes the source branch in GitLab when the merge request is accepted
+
+```
+acceptGitLabMR(useMRDescription: true, removeSourceBranch: true)
+```
+
 ## Parameterized builds
 You can trigger a job a manually by clicking 'This build is parameterized' in the job configuration and adding the any of the relevant build parameters. See the [defined parameters](#defined-parameters) list. If you only care about jobs being triggered from GitLab webhooks, this step is unnecessary.
 
