@@ -73,7 +73,7 @@ import static com.dabsquared.gitlabjenkins.trigger.handler.push.PushHookTriggerH
  *
  * @author Daniel Brooks
  */
-public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
+public class GitLabPushTrigger extends Trigger<Job<?, ?>> implements MergeRequestTriggerConfig {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -97,9 +97,12 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
     private BranchFilterType branchFilterType;
     private String includeBranchesSpec;
     private String excludeBranchesSpec;
+    private String sourceBranchRegex;
     private String targetBranchRegex;
     private MergeRequestLabelFilterConfig mergeRequestLabelFilterConfig;
     private volatile Secret secretToken;
+    private String pendingBuildName;
+    private boolean cancelPendingBuildsOnUpdate;
 
     private transient BranchFilter branchFilter;
     private transient PushHookTriggerHandler pushHookTriggerHandler;
@@ -119,9 +122,9 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
     						 boolean skipWorkInProgressMergeRequest, boolean ciSkip,
                              boolean setBuildDescription, boolean addNoteOnMergeRequest, boolean addCiMessage, boolean addVoteOnMergeRequest,
                              boolean acceptMergeRequestOnSuccess, BranchFilterType branchFilterType,
-                             String includeBranchesSpec, String excludeBranchesSpec, String targetBranchRegex,
-                             MergeRequestLabelFilterConfig mergeRequestLabelFilterConfig, String secretToken, boolean triggerOnPipelineEvent, 
-                             boolean triggerOnApprovedMergeRequest) {
+                             String includeBranchesSpec, String excludeBranchesSpec, String sourceBranchRegex, String targetBranchRegex,
+                             MergeRequestLabelFilterConfig mergeRequestLabelFilterConfig, String secretToken, boolean triggerOnPipelineEvent,
+                             boolean triggerOnApprovedMergeRequest, String pendingBuildName, boolean cancelPendingBuildsOnUpdate) {
         this.triggerOnPush = triggerOnPush;
         this.triggerOnMergeRequest = triggerOnMergeRequest;
         this.triggerOnAcceptedMergeRequest = triggerOnAcceptedMergeRequest;
@@ -139,11 +142,14 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
         this.branchFilterType = branchFilterType;
         this.includeBranchesSpec = includeBranchesSpec;
         this.excludeBranchesSpec = excludeBranchesSpec;
+        this.sourceBranchRegex = sourceBranchRegex;
         this.targetBranchRegex = targetBranchRegex;
         this.acceptMergeRequestOnSuccess = acceptMergeRequestOnSuccess;
         this.mergeRequestLabelFilterConfig = mergeRequestLabelFilterConfig;
         this.secretToken = Secret.fromString(secretToken);
         this.triggerOnApprovedMergeRequest = triggerOnApprovedMergeRequest;
+        this.pendingBuildName = pendingBuildName;
+        this.cancelPendingBuildsOnUpdate = cancelPendingBuildsOnUpdate;
 
         initializeTriggerHandler();
         initializeBranchFilter();
@@ -207,18 +213,22 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
         return triggerOnPush;
     }
 
+    @Override
     public boolean getTriggerOnMergeRequest() {
         return triggerOnMergeRequest;
     }
 
+    @Override
     public boolean isTriggerOnAcceptedMergeRequest() {
         return triggerOnAcceptedMergeRequest;
     }
 
+    @Override
     public boolean isTriggerOnApprovedMergeRequest() {
 		return triggerOnApprovedMergeRequest;
 	}    
     
+    @Override
     public boolean isTriggerOnClosedMergeRequest() {
         return triggerOnClosedMergeRequest;
     }
@@ -233,6 +243,7 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
         return this.noteRegex == null ? "" : this.noteRegex;
     }
 
+    @Override
     public TriggerOpenMergeRequest getTriggerOpenMergeRequestOnPush() {
         return triggerOpenMergeRequestOnPush;
     }
@@ -245,6 +256,7 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
         return ciSkip;
     }
 
+    @Override
     public boolean isSkipWorkInProgressMergeRequest() {
         return skipWorkInProgressMergeRequest;
     }
@@ -261,6 +273,10 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
         return excludeBranchesSpec;
     }
 
+    public String getSourceBranchRegex() {
+        return sourceBranchRegex;
+    }
+
     public String getTargetBranchRegex() {
         return targetBranchRegex;
     }
@@ -271,6 +287,15 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
 
     public String getSecretToken() {
         return secretToken == null ? null : secretToken.getPlainText();
+    }
+
+    public String getPendingBuildName() {
+        return pendingBuildName;
+    }
+
+    @Override
+    public boolean getCancelPendingBuildsOnUpdate() {
+        return this.cancelPendingBuildsOnUpdate;
     }
 
     @DataBoundSetter
@@ -364,6 +389,11 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
     }
 
     @DataBoundSetter
+    public void setSourceBranchRegex(String sourceBranchRegex) {
+        this.sourceBranchRegex = sourceBranchRegex;
+    }
+
+    @DataBoundSetter
     public void setTargetBranchRegex(String targetBranchRegex) {
         this.targetBranchRegex = targetBranchRegex;
     }
@@ -386,6 +416,16 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
     @DataBoundSetter
     public void setTriggerOnPipelineEvent(boolean triggerOnPipelineEvent) {
         this.triggerOnPipelineEvent = triggerOnPipelineEvent;
+    }
+
+    @DataBoundSetter
+    public void setPendingBuildName(String pendingBuildName) {
+        this.pendingBuildName = pendingBuildName;
+    }
+
+    @DataBoundSetter
+    public void setCancelPendingBuildsOnUpdate(boolean cancelPendingBuildsOnUpdate) {
+        this.cancelPendingBuildsOnUpdate = cancelPendingBuildsOnUpdate;
     }
 
     // executes when the Trigger receives a push request
@@ -432,13 +472,17 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
 
     // executes when the Trigger receives a pipeline event
     public void onPost(final PipelineHook hook) {
+        if (branchFilter == null) {
+            initializeBranchFilter();
+        }
+        if (pipelineTriggerHandler == null) {
+            initializeTriggerHandler();
+        }
         pipelineTriggerHandler.handle(job, hook, ciSkip, branchFilter, mergeRequestLabelFilter);
     }
 
     private void initializeTriggerHandler() {
-		mergeRequestHookTriggerHandler = newMergeRequestHookTriggerHandler(triggerOnMergeRequest,
-				triggerOnAcceptedMergeRequest, triggerOnClosedMergeRequest, triggerOpenMergeRequestOnPush,
-				skipWorkInProgressMergeRequest, triggerOnApprovedMergeRequest);
+		mergeRequestHookTriggerHandler = newMergeRequestHookTriggerHandler(this);
         noteHookTriggerHandler = newNoteHookTriggerHandler(triggerOnNoteRequest, noteRegex);
         pushHookTriggerHandler = newPushHookTriggerHandler(triggerOnPush, triggerOpenMergeRequestOnPush, skipWorkInProgressMergeRequest);
         pipelineTriggerHandler = newPipelineHookTriggerHandler(triggerOnPipelineEvent);
@@ -448,6 +492,7 @@ public class GitLabPushTrigger extends Trigger<Job<?, ?>> {
         branchFilter = BranchFilterFactory.newBranchFilter(branchFilterConfig()
                 .withIncludeBranchesSpec(includeBranchesSpec)
                 .withExcludeBranchesSpec(excludeBranchesSpec)
+                .withSourceBranchRegex(sourceBranchRegex)
                 .withTargetBranchRegex(targetBranchRegex)
                 .build(branchFilterType));
     }

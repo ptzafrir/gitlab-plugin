@@ -3,6 +3,7 @@ package com.dabsquared.gitlabjenkins.trigger.handler.merge;
 import com.dabsquared.gitlabjenkins.gitlab.hook.model.Action;
 import com.dabsquared.gitlabjenkins.gitlab.hook.model.State;
 import com.dabsquared.gitlabjenkins.gitlab.hook.model.builder.generated.MergeRequestObjectAttributesBuilder;
+import com.dabsquared.gitlabjenkins.trigger.TriggerOpenMergeRequest;
 import com.dabsquared.gitlabjenkins.trigger.filter.BranchFilterFactory;
 import com.dabsquared.gitlabjenkins.trigger.filter.BranchFilterType;
 import hudson.Launcher;
@@ -12,15 +13,7 @@ import hudson.model.FreeStyleProject;
 import hudson.plugins.git.GitSCM;
 import hudson.util.OneShotEvent;
 import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.ConcurrentRefUpdateException;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.api.errors.NoHeadException;
-import org.eclipse.jgit.api.errors.NoMessageException;
-import org.eclipse.jgit.api.errors.UnmergedPathsException;
-import org.eclipse.jgit.api.errors.WrongRepositoryStateException;
-import org.eclipse.jgit.errors.AmbiguousObjectException;
-import org.eclipse.jgit.errors.IncorrectObjectTypeException;
-import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -28,8 +21,12 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.rules.TestName;
+import org.junit.runner.Description;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -43,6 +40,7 @@ import static com.dabsquared.gitlabjenkins.gitlab.hook.model.builder.generated.P
 import static com.dabsquared.gitlabjenkins.gitlab.hook.model.builder.generated.UserBuilder.user;
 import static com.dabsquared.gitlabjenkins.trigger.filter.BranchFilterConfig.BranchFilterConfigBuilder.branchFilterConfig;
 import static com.dabsquared.gitlabjenkins.trigger.filter.MergeRequestLabelFilterFactory.newMergeRequestLabelFilter;
+import static com.dabsquared.gitlabjenkins.trigger.handler.merge.MergeRequestHookTriggerHandlerFactory.withConfig;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 
@@ -50,38 +48,59 @@ import static org.junit.Assert.assertThat;
  * @author Robin Müller
  */
 public class MergeRequestHookTriggerHandlerImplTest {
+    private static final Logger logger = LoggerFactory.getLogger(MergeRequestHookTriggerHandlerImplTest.class);
 
     @ClassRule
-    public static JenkinsRule jenkins = new JenkinsRule();
+    public static JenkinsRule jenkins;
+
+    static {
+        // Every negative (or failing positive) test adds 10 seconds to run time. The default 180 seconds might not
+        // suffice
+        System.setProperty("jenkins.test.timeout", "300");
+        jenkins = new JenkinsRule();
+    }
+
+    @Rule
+    public TestName name = new TestName() {
+        @Override
+        protected void starting(Description d) {
+            super.starting(d);
+            logger.info(">> Starting test {}", getMethodName());
+        }
+    };
 
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
     @Test
     public void mergeRequest_ciSkip() throws IOException, InterruptedException {
-        final OneShotEvent buildTriggered = new OneShotEvent();
-        FreeStyleProject project = jenkins.createFreeStyleProject();
-        project.getBuildersList().add(new TestBuilder() {
-            @Override
-            public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
-                buildTriggered.signal();
-                return true;
-            }
-        });
-        project.setQuietPeriod(0);
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.opened, State.reopened), false);
-        mergeRequestHookTriggerHandler.handle(project, mergeRequestHook()
-                .withObjectAttributes(mergeRequestObjectAttributes().withDescription("[ci-skip]").build())
-                .build(), true, BranchFilterFactory.newBranchFilter(branchFilterConfig().build(BranchFilterType.All)),
-                                              newMergeRequestLabelFilter(null));
-
-        buildTriggered.block(10000);
-        assertThat(buildTriggered.isSignaled(), is(false));
+        assertThat(ciSkipTestHelper("enable build","enable build"), is(true));
+        assertThat(ciSkipTestHelper("garbage [ci-skip] garbage","enable build"), is(false));
+        assertThat(ciSkipTestHelper("enable build","garbage [ci-skip] garbage"), is(false));
     }
 
     @Test
-    public void mergeRequest_build() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.opened, State.reopened), false);
+    public void mergeRequest_build_when_opened() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig().build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.opened);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
+    }
+
+    @Test
+    public void mergeRequest_build_when_reopened() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.reopened);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
+    }
+
+    @Test
+    public void mergeRequest_build_when_opened_with_approved_action_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
         OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.opened);
 
         assertThat(buildTriggered.isSignaled(), is(true));
@@ -89,70 +108,215 @@ public class MergeRequestHookTriggerHandlerImplTest {
 
     @Test
     public void mergeRequest_build_when_accepted() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.merged), false);
-        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.merged);
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnAcceptedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.merged, Action.merge);
 
         assertThat(buildTriggered.isSignaled(), is(true));
     }
+
+    @Test
+    public void mergeRequest_build_when_accepted_with_approved_action_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnAcceptedMergeRequest(true)
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.merged, Action.merge);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
+    }
+
 
     @Test
     public void mergeRequest_build_when_closed() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.closed), false);
-        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.closed);
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnClosedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.closed, Action.closed);
 
         assertThat(buildTriggered.isSignaled(), is(true));
     }
 
     @Test
-    public void mergeRequest_do_not_build_when_accepted() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.opened, State.updated), false);
+    public void mergeRequest_build_when_closed_with_actions_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnClosedMergeRequest(true)
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.closed, Action.closed);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
+    }
+
+    @Test
+    public void mergeRequest_do_not_build_for_accepted_when_nothing_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        do_not_build_for_state_when_nothing_enabled(State.merged);
+    }
+
+    @Test
+    public void mergeRequest_do_not_build_for_updated_when_nothing_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        do_not_build_for_state_when_nothing_enabled(State.updated);
+    }
+
+    @Test
+    public void mergeRequest_do_not_build_for_reopened_when_nothing_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        do_not_build_for_state_when_nothing_enabled(State.reopened);
+    }
+
+    @Test
+    public void mergeRequest_do_not_build_for_opened_when_nothing_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        do_not_build_for_state_when_nothing_enabled(State.opened);
+    }
+
+    @Test
+    public void mergeRequest_do_not_build_when_accepted_some_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOpenMergeRequest(TriggerOpenMergeRequest.source)
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
         OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.merged);
 
         assertThat(buildTriggered.isSignaled(), is(false));
+    }
+
+    @Test
+    public void mergeRequest_build_for_accepted_state_when_approved_action_triggered() throws IOException, InterruptedException, GitAPIException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnApprovedMergeRequest(true)
+            .setTriggerOnAcceptedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.merged, Action.approved);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
     }
 
     @Test
     public void mergeRequest_do_not_build_when_closed() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.opened, State.updated), false);
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOpenMergeRequest(TriggerOpenMergeRequest.source)
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
         OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.closed);
 
         assertThat(buildTriggered.isSignaled(), is(false));
     }
-    
+
     @Test
-    public void mergeRequest_build_when_approved() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(EnumSet.allOf(State.class), EnumSet.of(Action.approved), false);
-        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, Action.approved);
+    public void mergeRequest_do_not_build_for_updated_state_and_approved_action_when_both_not_enabled() throws IOException, InterruptedException, GitAPIException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOpenMergeRequest(TriggerOpenMergeRequest.source)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.approved);
+
+        assertThat(buildTriggered.isSignaled(), is(false));
+    }
+
+    @Test
+    public void mergeRequest_do_not_build_for_updated_state_and_approved_action_when_updated_enabled_but_approved_not() throws IOException, InterruptedException, GitAPIException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler =
+            withConfig()
+                .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.approved);
+
+        assertThat(buildTriggered.isSignaled(), is(false));
+    }
+
+    @Test
+    public void mergeRequest_build_for_update_state_when_updated_state_and_approved_action_enabled() throws IOException, InterruptedException, GitAPIException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.approved);
 
         assertThat(buildTriggered.isSignaled(), is(true));
     }
 
     @Test
-    public void mergeRequest_do_not_build_when_when_approved() throws Exception {
-        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(EnumSet.allOf(State.class), EnumSet.of(Action.update), false);
-        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, defaultMergeRequestObjectAttributes().withState(State.opened).withAction(Action.approved));
+    public void mergeRequest_build_for_update_state_and_action_when_updated_state_and_approved_action_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnApprovedMergeRequest(true)
+            .setTriggerOpenMergeRequest(TriggerOpenMergeRequest.source)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.update);
 
-        assertThat(buildTriggered.isSignaled(), is (false));
+        assertThat(buildTriggered.isSignaled(), is(true));
     }
-    
+
     @Test
-    public void mergeRequest_build_only_when_approved_and_not_when_opened() throws IOException, InterruptedException, GitAPIException, ExecutionException {
-        mergeRequest_build_only_when_approved(Action.open);
+    public void mergeRequest_do_not_build_for_update_state_and_action_when_opened_state_and_approved_action_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.update);
+
+        assertThat(buildTriggered.isSignaled(), is(false));
+    }
+
+    @Test
+    public void mergeRequest_build_for_update_state_when_updated_state_and_merge_action() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnAcceptedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.merge);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
+    }
+
+    @Test
+    public void mergeRequest_build_for_approved_action_when_opened_state_and_approved_action_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.approved);
+        assertThat(buildTriggered.isSignaled(), is(true));
+    }
+
+    @Test
+    public void mergeRequest_build_for_approved_action_when_only_approved_enabled() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnMergeRequest(false)
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, State.updated, Action.approved);
+
+        assertThat(buildTriggered.isSignaled(), is(true));
     }
 
     @Test
     public void mergeRequest_build_only_when_approved_and_not_when_updated() throws IOException, InterruptedException, GitAPIException, ExecutionException {
         mergeRequest_build_only_when_approved(Action.update);
     }
-    
-    
+
+    @Test
+    public void mergeRequest_build_only_when_approved_and_not_when_opened() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        mergeRequest_build_only_when_approved(Action.open);
+    }
+
+    @Test
+    public void mergeRequest_build_only_when_approved_and_not_when_merge() throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        mergeRequest_build_only_when_approved(Action.merge);
+    }
+
+    private void do_not_build_for_state_when_nothing_enabled(State state) throws IOException, InterruptedException, GitAPIException, ExecutionException {
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnMergeRequest(false)
+            .build();
+        OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, state);
+
+        assertThat(buildTriggered.isSignaled(), is(false));
+    }
+
 	private void mergeRequest_build_only_when_approved(Action action)
 			throws GitAPIException, IOException, InterruptedException {
-		MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(EnumSet.allOf(State.class), EnumSet.of(Action.approved), false);
+		MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = withConfig()
+            .setTriggerOnMergeRequest(false)
+            .setTriggerOnApprovedMergeRequest(true)
+            .build();
 	    OneShotEvent buildTriggered = doHandle(mergeRequestHookTriggerHandler, action);
-	
+
 	    assertThat(buildTriggered.isSignaled(), is(false));
-	}    
+	}
 
     private OneShotEvent doHandle(MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler, Action action) throws GitAPIException, IOException, InterruptedException {
         return doHandle(mergeRequestHookTriggerHandler, defaultMergeRequestObjectAttributes().withAction(action));
@@ -162,10 +326,13 @@ public class MergeRequestHookTriggerHandlerImplTest {
         return doHandle(mergeRequestHookTriggerHandler, defaultMergeRequestObjectAttributes().withState(state));
     }
 
+    private OneShotEvent doHandle(MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler, State state, Action action) throws GitAPIException, IOException, InterruptedException {
+        return doHandle(mergeRequestHookTriggerHandler, defaultMergeRequestObjectAttributes().withState(state).withAction(action));
+    }
+
 	private OneShotEvent doHandle(MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler,
-			MergeRequestObjectAttributesBuilder objectAttributes) throws GitAPIException, IOException, NoHeadException,
-			NoMessageException, UnmergedPathsException, ConcurrentRefUpdateException, WrongRepositoryStateException,
-			AmbiguousObjectException, IncorrectObjectTypeException, MissingObjectException, InterruptedException {
+			MergeRequestObjectAttributesBuilder objectAttributes) throws GitAPIException, IOException,
+            InterruptedException {
 		Git.init().setDirectory(tmp.getRoot()).call();
         tmp.newFile("test");
         Git git = Git.open(tmp.getRoot());
@@ -200,6 +367,27 @@ public class MergeRequestHookTriggerHandlerImplTest {
         buildTriggered.block(10000);
         return buildTriggered;
 	}
+
+    private boolean ciSkipTestHelper(String MRDescription, String lastCommitMsg) throws IOException, InterruptedException {
+        final OneShotEvent buildTriggered = new OneShotEvent();
+        FreeStyleProject project = jenkins.createFreeStyleProject();
+        project.getBuildersList().add(new TestBuilder() {
+            @Override
+            public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+                buildTriggered.signal();
+                return true;
+            }
+        });
+        project.setQuietPeriod(0);
+        MergeRequestHookTriggerHandler mergeRequestHookTriggerHandler = new MergeRequestHookTriggerHandlerImpl(Arrays.asList(State.opened, State.reopened), Arrays.asList(Action.approved), false, false);
+        mergeRequestHookTriggerHandler.handle(project, mergeRequestHook()
+                .withObjectAttributes(defaultMergeRequestObjectAttributes().withDescription(MRDescription).withLastCommit(commit().withMessage(lastCommitMsg).withAuthor(user().withName("test").build()).withId("testid").build()).build())
+                .build(), true, BranchFilterFactory.newBranchFilter(branchFilterConfig().build(BranchFilterType.All)),
+            newMergeRequestLabelFilter(null));
+
+        buildTriggered.block(10000);
+        return buildTriggered.isSignaled();
+    }
 
 	private MergeRequestObjectAttributesBuilder defaultMergeRequestObjectAttributes() {
 		return mergeRequestObjectAttributes()

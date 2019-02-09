@@ -1,5 +1,52 @@
 ChangeLog
 
+1.5.11
+=====================
+* #823: Fix gitlabCommitStatus step so that name argument is not required
+* #854: Improve log string for 'not allowed' branches
+
+1.5.10
+=====================
+* #742: Fix inability to trigger builds on Accepted, Approved, and Closed Merge Requests
+* #818: Fix NPE when 'Build on successful pipeline events' is enabled
+* #824: Allow filtering source branches by regex
+* #825: Improve project ID parsing, fixes bugs in some edge cases
+* #826: Add support for GitLab System Hooks
+
+1.5.9
+=====================
+* #748: Fix so that the 'Add vote for build status' feature actually adds a vote/+1 rather than just a comment
+* #798: Fix so that MR 'approved' action does not trigger a build unless it is configured to do so
+* #799: Fix so that gitlabCommitStatus does not require a 'name' parameter.
+* #807: Fix so that the plugin checks commits to MRs for [ci-skip], instead of only checking the MR description
+
+1.5.8
+=====================
+* #735: Add additional options to acceptGitlabMergeRequest step, to remove source branch and use the MR description in the merge commit
+* #793: Fix Pipeline support which was broken in 1.5.7
+
+1.5.7
+=====================
+* #747: Add ability to interact with multiple GitLab services when sending build status
+* #758: Always build new MRs, even if the last commit was already built by Jenkins
+* #762: Fix for triggering builds when MR is accepted/approved/closed
+* #774: Fix display of branch names in GitLab UI when a build is triggered by a tag push
+* #786: Add ability to set pipeline status in GitLab to "skipped"
+
+1.5.6
+=====================
+* #691: Fix project ID regex to not require '.git' in URLs
+* #693: Allow sending 'pending' status when Pipeline jobs are in queue
+* #693: Allow canceling of running MR builds when new commits are pushed to the MR
+* #759: Fix NPE when saving job config in some cases
+* #767: Fix NPE when GitLab pipeline event is received
+
+1.5.5
+=====================
+* #698: Make plugin respect no-proxy-hosts when a proxy is used
+* #731: "Build on successful pipeline events" setting does not stay set
+* #732: Filtering by label never matches anything
+
 1.5.4
 =====================
 * #714: Fix broken 'Trigger on approved merge requests' setting

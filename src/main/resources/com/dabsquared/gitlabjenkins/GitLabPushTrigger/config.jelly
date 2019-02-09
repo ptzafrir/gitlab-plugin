@@ -42,6 +42,12 @@
     <f:entry title="Build on successful pipeline events" field="triggerOnPipelineEvent">
       <f:checkbox default="false"/>
     </f:entry>
+    <f:entry title="Pending build name for pipeline" help="/plugin/gitlab-plugin/help/help-pendingBuildName.html">
+      <f:textbox field="pendingBuildName"/>
+    </f:entry>
+    <f:entry title="Cancel pending merge request builds on update" field="cancelPendingBuildsOnUpdate">
+      <f:checkbox default="false"/>
+    </f:entry>
 
     <f:entry title="Allowed branches">
       <table>
@@ -63,6 +69,9 @@
         <f:radioBlock name="branchFilterType" value="RegexBasedFilter" title="Filter branches by regex"
                       checked="${instance.branchFilterType == 'RegexBasedFilter'}" inline="true"
                       help="/plugin/gitlab-plugin/help/help-filterBranchesByRegex.html">
+          <f:entry title="Source Branch Regex">
+            <f:textbox name="sourceBranchRegex" field="sourceBranchRegex"/>
+          </f:entry>
           <f:entry title="Target Branch Regex">
             <f:textbox name="targetBranchRegex" field="targetBranchRegex"/>
           </f:entry>
